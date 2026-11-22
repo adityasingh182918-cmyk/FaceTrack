@@ -1,0 +1,17 @@
+.codex/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+.env.*
+data/logs/
+data/faces/
+data/database.db
+data/attendance_report.csv
+data/theme.json
+build/
+dist/
+web_app/node_modules/

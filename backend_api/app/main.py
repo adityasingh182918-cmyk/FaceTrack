@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,20 +20,34 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from backend_api.app.api import attendance, auth, faculty, health, reports, students, timetable
 from database.db import init_database
+from backend_api.app.security import validate_auth_configuration
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    validate_auth_configuration()
+    init_database()
+    yield
 
 
 def create_app() -> FastAPI:
-    init_database()
-
     app = FastAPI(
         title="FACETRACK Backend API",
         version="0.1.0",
         description="Shared API layer for FACETRACK desktop and web clients.",
+        lifespan=lifespan,
     )
+    allowed_origins = [
+        origin.strip()
+        for origin in os.getenv("FACETRACK_ALLOWED_ORIGINS", "").split(",")
+        if origin.strip()
+    ]
+    if os.getenv("FACETRACK_ENV") != "production" and not allowed_origins:
+        allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173"]
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=allowed_origins,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

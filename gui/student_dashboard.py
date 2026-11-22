@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QStackedWidget,
@@ -102,7 +103,10 @@ class StudentHomePage(QWidget):
             summary = self.api_client.get_student_attendance_summary(self.student.roll_no)
             self.red_flag_value.setText(str(current_student["red_flags"]))
             overall = summary["overall_percentage"]
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
             current_student = self.student_service.get_student_by_roll(self.student.roll_no)
             if current_student:
                 self.student = current_student
@@ -176,7 +180,10 @@ class StudentAttendancePage(QWidget):
                 [record["subject"], record["date"], record["time"], record["status"], record["late_flags"], record["roll_no"]]
                 for record in records
             ]
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
             _, summary_rows = self.student_service.get_attendance_summary(self.student.roll_no)
             records = self.attendance_service.get_records(roll_no=self.student.roll_no)
             summary_values = [

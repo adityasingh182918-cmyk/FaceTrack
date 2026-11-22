@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 import logging
+import secrets
 from datetime import datetime
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
-import cv2
 import numpy as np
-from PyQt6.QtGui import QImage, QPixmap
+
+if TYPE_CHECKING:
+    from PyQt6.QtGui import QPixmap
 
 from utils.config import LOG_FILE, LOGS_DIR
 
@@ -29,9 +32,42 @@ def setup_logging() -> None:
     )
 
 
+_PASSWORD_HASH_ITERATIONS = 310_000
+
+
 def hash_password(password: str) -> str:
-    """Return a stable SHA-256 password hash."""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    """Return a salted PBKDF2 password hash."""
+    salt = secrets.token_bytes(16)
+    password_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _PASSWORD_HASH_ITERATIONS)
+    return f"pbkdf2_sha256${_PASSWORD_HASH_ITERATIONS}${salt.hex()}${password_hash.hex()}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify current PBKDF2 hashes and legacy SHA-256 hashes."""
+    if stored_hash.startswith("pbkdf2_sha256$"):
+        try:
+            _, iteration_count, salt_hex, hash_hex = stored_hash.split("$", 3)
+            iterations = int(iteration_count)
+            if iterations < 1:
+                return False
+            actual_hash = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), iterations)
+            return hmac.compare_digest(actual_hash.hex(), hash_hex)
+        except (ValueError, TypeError):
+            return False
+
+    legacy_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return hmac.compare_digest(legacy_hash, stored_hash)
+
+
+def password_needs_rehash(stored_hash: str) -> bool:
+    """Identify legacy or weaker hashes for gradual login-time migration."""
+    if not stored_hash.startswith("pbkdf2_sha256$"):
+        return True
+    try:
+        _, iteration_count, _, _ = stored_hash.split("$", 3)
+        return int(iteration_count) < _PASSWORD_HASH_ITERATIONS
+    except (ValueError, TypeError):
+        return True
 
 
 def serialize_encodings(encodings: Iterable[np.ndarray]) -> str:
@@ -46,6 +82,8 @@ def deserialize_encodings(raw_value: str | None) -> list[np.ndarray]:
         return []
 
     values = json.loads(raw_value)
+    if not isinstance(values, list) or any(not isinstance(item, str) for item in values):
+        raise ValueError("Serialized encodings must be a list of base64 strings.")
     return [np.frombuffer(base64.b64decode(item.encode("ascii")), dtype=np.float64) for item in values]
 
 
@@ -66,6 +104,9 @@ def now_time_str() -> str:
 
 def frame_to_pixmap(frame: np.ndarray) -> QPixmap:
     """Convert a BGR OpenCV frame to a Qt pixmap."""
+    import cv2
+    from PyQt6.QtGui import QImage, QPixmap
+
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     height, width, channel = rgb_frame.shape
     bytes_per_line = channel * width

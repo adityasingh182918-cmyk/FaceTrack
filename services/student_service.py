@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
+import binascii
 import logging
 import shutil
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import numpy as np
 
 from database.db import db_manager
 from database.models import AttendanceSummary, Student
 from services.attendance_service import RED_FLAGS_PER_DEDUCTION
-from utils.helpers import deserialize_encodings, hash_password, safe_percentage, serialize_encodings
+from utils.config import FACES_DIR
+from utils.helpers import (
+    deserialize_encodings,
+    hash_password,
+    password_needs_rehash,
+    safe_percentage,
+    serialize_encodings,
+    verify_password,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,6 +34,12 @@ class StudentService:
         """Insert a new student when encodings are already serialized upstream."""
         if not serialized_encoding:
             return False, "At least one face encoding is required."
+        try:
+            encodings = deserialize_encodings(serialized_encoding)
+        except (ValueError, TypeError, AttributeError, binascii.Error):
+            return False, "Face encoding data is invalid."
+        if not encodings or any(encoding.size == 0 or not np.isfinite(encoding).all() for encoding in encodings):
+            return False, "At least one valid face encoding is required."
 
         with db_manager.connection() as conn:
             exists = conn.execute("SELECT 1 FROM Students WHERE roll_no = ?", (student_data["roll_no"],)).fetchone()
@@ -115,8 +131,9 @@ class StudentService:
 
             face_dir = existing["face_image_dir"]
             if face_dir and new_roll_no != roll_no:
-                current_path = Path(face_dir)
-                if current_path.exists():
+                current_path = Path(face_dir).resolve()
+                face_root = FACES_DIR.resolve()
+                if current_path.parent == face_root and current_path.name == roll_no and current_path.exists():
                     target_path = current_path.parent / new_roll_no
                     current_path.rename(target_path)
                     conn.execute("UPDATE Students SET face_image_dir = ? WHERE roll_no = ?", (str(target_path), new_roll_no))
@@ -135,18 +152,39 @@ class StudentService:
 
         face_dir = existing["face_image_dir"]
         if face_dir:
-            shutil.rmtree(face_dir, ignore_errors=True)
+            face_path = Path(face_dir).resolve()
+            face_root = FACES_DIR.resolve()
+            if face_path != face_root and face_root in face_path.parents:
+                shutil.rmtree(face_path, ignore_errors=True)
         LOGGER.info("Deleted student %s", roll_no)
         return True, "Student deleted successfully."
+
+    def save_face_samples(self, files: list[tuple[str, bytes]]) -> Path:
+        """Store validated face images under the configured persistent data directory."""
+        FACES_DIR.mkdir(parents=True, exist_ok=True)
+        upload_dir = FACES_DIR / uuid4().hex
+        upload_dir.mkdir()
+        try:
+            for index, (extension, content) in enumerate(files, start=1):
+                (upload_dir / f"sample_{index:02d}{extension}").write_bytes(content)
+        except OSError:
+            shutil.rmtree(upload_dir, ignore_errors=True)
+            raise
+        return upload_dir
 
     def authenticate_student(self, roll_no: str, password: str) -> Student | None:
         """Authenticate a student using roll number and password."""
         with db_manager.connection() as conn:
-            row = conn.execute(
-                "SELECT * FROM Students WHERE roll_no = ? AND password_hash = ?",
-                (roll_no, hash_password(password)),
-            ).fetchone()
-        return Student(**dict(row)) if row else None
+            row = conn.execute("SELECT * FROM Students WHERE roll_no = ?", (roll_no,)).fetchone()
+            if not row or not verify_password(password, row["password_hash"]):
+                return None
+
+            student_data = dict(row)
+            if password_needs_rehash(student_data["password_hash"]):
+                updated_hash = hash_password(password)
+                conn.execute("UPDATE Students SET password_hash = ? WHERE roll_no = ?", (updated_hash, roll_no))
+                student_data["password_hash"] = updated_hash
+        return Student(**student_data)
 
     def get_student_by_roll(self, roll_no: str) -> Student | None:
         """Fetch a student record by roll number."""

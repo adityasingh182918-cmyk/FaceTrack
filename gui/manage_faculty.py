@@ -90,7 +90,10 @@ class ManageFacultyWidget(QWidget):
             faculty_rows = self.api_client.list_faculty(include_admin=True)
             mapped_rows = faculty_rows
             use_dict = True
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
             faculty_rows = self.faculty_service.list_faculty(include_admin=True)
             mapped_rows = faculty_rows
             use_dict = False
@@ -113,7 +116,10 @@ class ManageFacultyWidget(QWidget):
                 role="faculty",
             )
             message = response["message"]
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Faculty Error", str(exc))
+                return
             success, message = self.faculty_service.create_faculty(
                 self.name_input.text().strip(),
                 self.username_input.text().strip(),
@@ -145,7 +151,10 @@ class ManageFacultyWidget(QWidget):
         try:
             response = self.api_client.delete_faculty(username)
             message = response["message"]
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Faculty Error", str(exc))
+                return
             success, message = self.faculty_service.delete_faculty(username)
             if not success:
                 QMessageBox.warning(self, "Faculty Error", message)

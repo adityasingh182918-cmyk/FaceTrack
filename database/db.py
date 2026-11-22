@@ -27,9 +27,10 @@ class DatabaseManager:
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
         """Yield a configured sqlite connection."""
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 30000")
         try:
             yield conn
             conn.commit()
@@ -48,7 +49,7 @@ def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, 
 
 
 def init_database() -> None:
-    """Create folders, schema, and a default admin account."""
+    """Create folders, schema, and the configured initial admin account."""
     setup_logging()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     FACES_DIR.mkdir(parents=True, exist_ok=True)
@@ -108,6 +109,8 @@ def init_database() -> None:
 
         exists = conn.execute("SELECT id FROM Faculty WHERE username = ?", (FACULTY_DEFAULT_USERNAME,)).fetchone()
         if not exists:
+            if not FACULTY_DEFAULT_PASSWORD:
+                raise RuntimeError("Set FACETRACK_ADMIN_PASSWORD before initializing a new production database.")
             conn.execute(
                 "INSERT INTO Faculty(username, password, name, role) VALUES (?, ?, ?, ?)",
                 (

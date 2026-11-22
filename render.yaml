@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: facetrack-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r backend_api/requirements.txt
+    startCommand: uvicorn backend_api.app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    disk:
+      name: facetrack-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
+      - key: FACETRACK_ENV
+        value: production
+      - key: FACETRACK_DATA_DIR
+        value: /var/data
+      - key: FACETRACK_ADMIN_USERNAME
+        value: admin
+      - key: FACETRACK_ADMIN_PASSWORD
+        generateValue: true
+      - key: FACETRACK_JWT_SECRET
+        generateValue: true
+      - key: FACETRACK_ALLOWED_ORIGINS
+        sync: false

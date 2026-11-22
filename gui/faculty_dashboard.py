@@ -143,7 +143,10 @@ class DashboardHome(QWidget):
             else:
                 today_rows = self.api_client.get_today_classes(self.faculty_user.username)
                 faculty_count = None
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
             late_rows = self.attendance_service.get_late_student_report()
             total_students = len(self.student_service.list_students())
             total_records = self.attendance_service.count_total_records()
@@ -225,7 +228,10 @@ class ReportsWidget(QWidget):
                 [record["roll_no"], record["name"], record["subject"], record["date"], record["time"], record["status"], record["late_flags"]]
                 for record in records
             ]
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
             records = self.attendance_service.get_records()
             values_list = [
                 [record.roll_no, record.name, record.subject, record.date, record.time, record.status, record.late_flags]

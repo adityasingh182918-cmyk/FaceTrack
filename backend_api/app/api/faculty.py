@@ -5,10 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend_api.app.dependencies import get_faculty_service
+from backend_api.app.security import require_roles
 from backend_api.app.schemas import FacultyCreateRequest, FacultyMutationResponse, FacultyOut
 from services.faculty_service import FacultyService
 
-router = APIRouter(prefix="/faculty", tags=["faculty"])
+router = APIRouter(prefix="/faculty", tags=["faculty"], dependencies=[Depends(require_roles("admin"))])
 
 
 @router.get("", response_model=list[FacultyOut])

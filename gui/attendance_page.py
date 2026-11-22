@@ -111,7 +111,11 @@ class AttendanceWidget(QWidget):
     def load_today_classes(self) -> None:
         try:
             classes = self.api_client.get_today_classes(self.faculty_username)
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                self.class_selector.clear()
+                return
             classes = self.timetable_service.get_today_classes(self.faculty_username)
         self.class_selector.clear()
         self.class_selector.addItem("Select today's class", None)
@@ -147,8 +151,10 @@ class AttendanceWidget(QWidget):
                 for student in api_students
                 if student["encodings"]
             ]
-        except BackendApiError:
-            pass
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
         if not student_records:
             QMessageBox.warning(self, "No Students", "No registered students with face data are available for this batch.")
             return
@@ -164,7 +170,10 @@ class AttendanceWidget(QWidget):
         self.records_table.setRowCount(0)
         try:
             self.api_client.seed_attendance_session(entry.id)
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Attendance Error", str(exc))
+                return
             self.attendance_service.ensure_session_records(entry, student_records)
         self.recognizer = FaceRecognizer(student_records)
         self.start_button.setEnabled(False)
@@ -202,7 +211,12 @@ class AttendanceWidget(QWidget):
                     response = self.api_client.mark_attendance(self.current_session.id, match["roll_no"])
                     success = response["success"]
                     message = response["message"]
-                except BackendApiError:
+                except BackendApiError as exc:
+                    if exc.status_code is not None:
+                        self.mode_label.setText(str(exc))
+                        self.stop_session()
+                        QMessageBox.warning(self, "Attendance Error", str(exc))
+                        return
                     success, message = self.attendance_service.mark_attendance(match, self.current_session)
                 self._append_record(
                     match["roll_no"],

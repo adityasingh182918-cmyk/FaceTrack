@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class FacultyOut(BaseModel):
@@ -68,7 +68,7 @@ class LateFlagReportRow(BaseModel):
 
 class LoginRequest(BaseModel):
     username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+    password: str = Field(min_length=1, max_length=128)
     role: str = Field(pattern="^(admin|faculty|student)$")
 
 
@@ -89,12 +89,14 @@ class AuthUserOut(BaseModel):
 class LoginResponse(BaseModel):
     access_type: str
     user: AuthUserOut
+    access_token: str
+    token_type: str = "bearer"
 
 
 class FacultyCreateRequest(BaseModel):
     name: str = Field(min_length=1)
     username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
+    password: str = Field(min_length=8, max_length=128)
     role: str = Field(default="faculty", pattern="^(admin|faculty)$")
 
 
@@ -127,8 +129,8 @@ class StudentCreateRequest(BaseModel):
     department: str = Field(min_length=1)
     year: int
     section: str = Field(min_length=1)
-    password: str = Field(min_length=1)
-    serialized_encoding: str = Field(min_length=1)
+    password: str = Field(min_length=8, max_length=128)
+    serialized_encoding: str = Field(min_length=1, max_length=1_000_000)
     face_image_dir: str = ""
 
 
@@ -139,6 +141,15 @@ class StudentUpdateRequest(BaseModel):
     year: int
     section: str = Field(min_length=1)
     password: str = ""
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, password: str) -> str:
+        if password and len(password) < 8:
+            raise ValueError("Password must contain at least 8 characters.")
+        if len(password) > 128:
+            raise ValueError("Password must contain at most 128 characters.")
+        return password
 
 
 class StudentMutationResponse(BaseModel):

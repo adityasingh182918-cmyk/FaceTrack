@@ -132,8 +132,10 @@ class TimetableWidget(QWidget):
             for faculty in faculty_rows:
                 self.faculty_input.addItem(f"{faculty['name']} (@{faculty['username']})", faculty["username"])
             return
-        except BackendApiError:
-            pass
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
 
         faculty_rows = self.faculty_service.list_faculty(include_admin=False)
         for faculty in faculty_rows:
@@ -162,7 +164,10 @@ class TimetableWidget(QWidget):
                 response = self.api_client.update_timetable_entry(self.editing_entry_id, {**payload, "id": self.editing_entry_id})
             success = response["success"]
             message = response["message"]
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Timetable Error", str(exc))
+                return
             if self.editing_entry_id is None:
                 success, message = self.service.create_entry(**payload)
             else:
@@ -209,7 +214,10 @@ class TimetableWidget(QWidget):
         try:
             response = self.api_client.delete_timetable_entry(entry_id)
             message = response["message"]
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Timetable Error", str(exc))
+                return
             success, message = self.service.delete_entry(entry_id)
             if not success:
                 QMessageBox.warning(self, "Timetable Error", message)
@@ -239,7 +247,10 @@ class TimetableWidget(QWidget):
             )
             faculty_rows = self.api_client.list_faculty(include_admin=True)
             faculty_map = {faculty["username"]: faculty["name"] for faculty in faculty_rows}
-        except BackendApiError:
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Backend Error", str(exc))
+                return
             entries = self.service.list_entries(
                 faculty=self.faculty_username if self.faculty_username else None,
                 section=self.student_section if self.student_section else None,

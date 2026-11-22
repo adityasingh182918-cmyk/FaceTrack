@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from fastapi import HTTPException, status
 
 from backend_api.app.dependencies import get_timetable_service
+from backend_api.app.security import AuthenticatedUser, get_current_user, require_roles
 from backend_api.app.schemas import (
     TimetableCreateRequest,
     TimetableEntryOut,
@@ -13,6 +14,7 @@ from backend_api.app.schemas import (
     TimetableUpdateRequest,
 )
 from services.timetable_service import TimetableService
+from utils.helpers import current_day_name
 
 router = APIRouter(prefix="/timetable", tags=["timetable"])
 
@@ -35,7 +37,12 @@ def list_timetable(
     section: str | None = None,
     day: str | None = None,
     timetable_service: TimetableService = Depends(get_timetable_service),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[TimetableEntryOut]:
+    if current_user.role == "faculty":
+        faculty = current_user.username
+    elif current_user.role == "student":
+        section = current_user.section
     return [_serialize_entry(entry) for entry in timetable_service.list_entries(faculty=faculty, section=section, day=day)]
 
 
@@ -43,7 +50,15 @@ def list_timetable(
 def get_today_classes(
     faculty: str | None = None,
     timetable_service: TimetableService = Depends(get_timetable_service),
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> list[TimetableEntryOut]:
+    if current_user.role == "faculty":
+        faculty = current_user.username
+    if current_user.role == "student":
+        return [
+            _serialize_entry(entry)
+            for entry in timetable_service.list_entries(section=current_user.section, day=current_day_name())
+        ]
     return [_serialize_entry(entry) for entry in timetable_service.get_today_classes(faculty=faculty)]
 
 
@@ -51,6 +66,7 @@ def get_today_classes(
 def create_timetable_entry(
     payload: TimetableCreateRequest,
     timetable_service: TimetableService = Depends(get_timetable_service),
+    _: AuthenticatedUser = Depends(require_roles("admin")),
 ) -> TimetableMutationResponse:
     success, message = timetable_service.create_entry(
         subject=payload.subject,
@@ -70,6 +86,7 @@ def update_timetable_entry(
     entry_id: int,
     payload: TimetableUpdateRequest,
     timetable_service: TimetableService = Depends(get_timetable_service),
+    _: AuthenticatedUser = Depends(require_roles("admin")),
 ) -> TimetableMutationResponse:
     success, message = timetable_service.update_entry(
         entry_id=entry_id,
@@ -89,6 +106,7 @@ def update_timetable_entry(
 def delete_timetable_entry(
     entry_id: int,
     timetable_service: TimetableService = Depends(get_timetable_service),
+    _: AuthenticatedUser = Depends(require_roles("admin")),
 ) -> TimetableMutationResponse:
     success, message = timetable_service.delete_entry(entry_id)
     if not success:

@@ -21,13 +21,13 @@ from PyQt6.QtWidgets import (
 
 from client.api_client import BackendApiClient, BackendApiError
 from database.db import db_manager
-from database.models import FacultyUser
+from database.models import FacultyUser, Student
 from gui.branding import ClassroomIllustration, FacetrackLogo, PortalHeader
 from gui.faculty_dashboard import FacultyDashboard
 from gui.student_dashboard import StudentDashboard
 from services.student_service import StudentService
-from utils.config import APP_NAME, FACULTY_DEFAULT_PASSWORD, FACULTY_DEFAULT_USERNAME
-from utils.helpers import hash_password
+from utils.config import APP_NAME
+from utils.helpers import hash_password, password_needs_rehash, verify_password
 from utils.theme import theme_manager
 
 
@@ -94,10 +94,10 @@ class LoginWindow(QDialog):
         tips.setObjectName("MetricCard")
         tips_layout = QVBoxLayout(tips)
         tips_layout.setContentsMargins(16, 16, 16, 16)
-        tips_title = QLabel("Default Admin Access")
+        tips_title = QLabel("Administrator access")
         tips_title.setObjectName("MetricLabel")
         tips_body = QLabel(
-            f"Username: {FACULTY_DEFAULT_USERNAME}\nPassword: {FACULTY_DEFAULT_PASSWORD}\nRole: Admin"
+            "Use the administrator credentials configured for this installation."
         )
         tips_body.setObjectName("SidebarMeta")
         tips_layout.addWidget(tips_title)
@@ -247,14 +247,23 @@ class LoginWindow(QDialog):
             )
             self._open_dashboard_safe(lambda: FacultyDashboard(faculty_user))
             return
-        except BackendApiError:
-            pass
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Login Failed", str(exc))
+                return
 
         with db_manager.connection() as conn:
             row = conn.execute(
-                "SELECT id, username, name, role FROM Faculty WHERE username = ? AND password = ?",
-                (username, hash_password(password)),
+                "SELECT id, username, name, role, password FROM Faculty WHERE username = ?",
+                (username,),
             ).fetchone()
+            if not row or not verify_password(password, row["password"]):
+                row = None
+            elif password_needs_rehash(row["password"]):
+                conn.execute(
+                    "UPDATE Faculty SET password = ? WHERE username = ?",
+                    (hash_password(password), username),
+                )
         if not row:
             QMessageBox.warning(self, "Login Failed", f"Invalid {expected_role} credentials.")
             return
@@ -282,12 +291,26 @@ class LoginWindow(QDialog):
         try:
             response = self.api_client.login(roll_no, password, "student")
             user = response["user"]
-            student = self.student_service.get_student_by_roll(user["roll_no"])
-            if student:
-                self._open_dashboard_safe(lambda: StudentDashboard(student))
+            profile = self.api_client.get_student(user["roll_no"])
+            student = Student(
+                id=profile["id"],
+                roll_no=profile["roll_no"],
+                name=profile["name"],
+                department=profile["department"],
+                year=profile["year"],
+                section=profile["section"],
+                password_hash="",
+                encoding="",
+                face_image_dir="",
+                red_flags=profile["red_flags"],
+                created_at=profile["created_at"],
+            )
+            self._open_dashboard_safe(lambda: StudentDashboard(student))
+            return
+        except BackendApiError as exc:
+            if exc.status_code is not None:
+                QMessageBox.warning(self, "Login Failed", str(exc))
                 return
-        except BackendApiError:
-            pass
 
         student = self.student_service.authenticate_student(
             roll_no,

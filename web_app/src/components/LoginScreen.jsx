@@ -5,17 +5,19 @@ export default function LoginScreen({
   onChange,
   onSubmit,
 }) {
+  const isStudent = form.role === "student";
+  const portalName = isStudent ? "Student" : form.role === "admin" ? "Administrator" : "Faculty";
+
   return (
     <div className="login-shell">
       <section className="hero-panel">
         <div className="hero-overlay" />
         <div className="hero-content">
-          <p className="eyebrow">FACETRACK STUDENT PORTAL</p>
-          <h1>Track attendance, timetable, and red flags from the web.</h1>
+          <p className="eyebrow">FACETRACK PORTAL</p>
+          <h1>Attendance, timetables, and student records in one place.</h1>
           <p className="hero-copy">
-            This portal is the web companion to the FACETRACK desktop attendance
-            system. Students can view academic status in real time while
-            attendance marking remains faculty controlled.
+            Sign in to the student, faculty, or administrator workspace. Face
+            capture and recognition continue to use the FACETRACK desktop app.
           </p>
         </div>
       </section>
@@ -24,19 +26,28 @@ export default function LoginScreen({
         <div className="logo-row">
           <div className="logo-badge">FT</div>
           <div>
-            <h2>Student Sign In</h2>
-            <p>Use your roll number and student password.</p>
+            <h2>{portalName} Sign In</h2>
+            <p>Use your registered {isStudent ? "roll number" : "username"} and password.</p>
           </div>
         </div>
 
         <form className="form-grid" onSubmit={onSubmit}>
           <label>
-            <span>Roll Number</span>
+            <span>Portal</span>
+            <select name="role" value={form.role} onChange={onChange}>
+              <option value="student">Student</option>
+              <option value="faculty">Faculty</option>
+              <option value="admin">Administrator</option>
+            </select>
+          </label>
+
+          <label>
+            <span>{isStudent ? "Roll Number" : "Username"}</span>
             <input
-              name="rollNo"
-              value={form.rollNo}
+              name="username"
+              value={form.username}
               onChange={onChange}
-              placeholder="S24CSEU0001"
+              placeholder={isStudent ? "S24CSEU0001" : "Enter username"}
               autoComplete="username"
             />
           </label>
@@ -56,7 +67,7 @@ export default function LoginScreen({
           {error ? <div className="error-banner">{error}</div> : null}
 
           <button className="primary-button" type="submit" disabled={loading}>
-            {loading ? "Signing in..." : "Open Student Portal"}
+            {loading ? "Signing in..." : `Open ${portalName} Portal`}
           </button>
         </form>
       </section>

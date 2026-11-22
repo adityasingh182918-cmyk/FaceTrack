@@ -1,22 +1,28 @@
 import { useEffect, useState } from "react";
 import LoginScreen from "./components/LoginScreen.jsx";
 import PortalShell from "./components/PortalShell.jsx";
-import { api } from "./services/api.js";
+import StaffPortal from "./components/StaffPortal.jsx";
+import { api, setAccessToken } from "./services/api.js";
 
-const STORAGE_KEY = "facetrack-student-session";
+const STORAGE_KEY = "facetrack-session";
 
-function loadStoredSession() {
+function loadStoredSession(setToken) {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = window.sessionStorage.getItem(STORAGE_KEY);
+    const session = raw ? JSON.parse(raw) : null;
+    if (session?.access_token && session?.user?.role) {
+      setToken(session.access_token);
+      return session;
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
 export default function App() {
-  const [form, setForm] = useState({ rollNo: "", password: "" });
-  const [session, setSession] = useState(loadStoredSession);
+  const [form, setForm] = useState({ username: "", password: "", role: "student" });
+  const [session, setSession] = useState(() => loadStoredSession(setAccessToken));
   const [profile, setProfile] = useState(null);
   const [attendanceSummary, setAttendanceSummary] = useState(null);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
@@ -25,7 +31,22 @@ export default function App() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!session?.roll_no) {
+    function handleUnauthorized() {
+      window.sessionStorage.removeItem(STORAGE_KEY);
+      setSession(null);
+      setProfile(null);
+      setAttendanceSummary(null);
+      setAttendanceRecords([]);
+      setTimetable([]);
+      setError("Your session expired. Please sign in again.");
+    }
+
+    window.addEventListener("facetrack:unauthorized", handleUnauthorized);
+    return () => window.removeEventListener("facetrack:unauthorized", handleUnauthorized);
+  }, []);
+
+  useEffect(() => {
+    if (session?.user?.role !== "student" || !session.user.roll_no) {
       return;
     }
 
@@ -34,9 +55,9 @@ export default function App() {
     setError("");
 
     Promise.all([
-      api.getStudentProfile(session.roll_no),
-      api.getStudentAttendanceSummary(session.roll_no),
-      api.getStudentAttendanceRecords(session.roll_no),
+      api.getStudentProfile(session.user.roll_no),
+      api.getStudentAttendanceSummary(session.user.roll_no),
+      api.getStudentAttendanceRecords(session.user.roll_no),
     ])
       .then(async ([profileResponse, summaryResponse, attendanceResponse]) => {
         const timetableResponse = await api.getStudentTimetable(profileResponse.section);
@@ -76,16 +97,13 @@ export default function App() {
     setLoading(true);
 
     try {
-      const response = await api.loginStudent(form.rollNo.trim().toUpperCase(), form.password);
-      const user = response.user;
-      const nextSession = {
-        id: user.id,
-        roll_no: user.roll_no,
-        name: user.name,
-      };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
+      const username = form.role === "student" ? form.username.trim().toUpperCase() : form.username.trim();
+      const response = await api.login(username, form.password, form.role);
+      const nextSession = { user: response.user, access_token: response.access_token };
+      setAccessToken(response.access_token);
+      window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(nextSession));
       setSession(nextSession);
-      setForm({ rollNo: "", password: "" });
+      setForm((current) => ({ ...current, username: "", password: "" }));
     } catch (requestError) {
       setError(requestError.message || "Login failed.");
     } finally {
@@ -94,7 +112,8 @@ export default function App() {
   }
 
   function handleLogout() {
-    window.localStorage.removeItem(STORAGE_KEY);
+    setAccessToken(null);
+    window.sessionStorage.removeItem(STORAGE_KEY);
     setSession(null);
     setProfile(null);
     setAttendanceSummary(null);
@@ -115,9 +134,13 @@ export default function App() {
     );
   }
 
+  if (session.user.role !== "student") {
+    return <StaffPortal user={session.user} onLogout={handleLogout} />;
+  }
+
   return (
     <PortalShell
-      student={session}
+      student={session.user}
       profile={profile}
       attendanceSummary={attendanceSummary}
       attendanceRecords={attendanceRecords}
